@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="de" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vocal Range & Voice Type Studio</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;700;800&display=swap" rel="stylesheet">
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #090d16; color: #f1f5f9; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col font-sans antialiased selection:bg-indigo-500/30">
+
+  <!-- TOP HEADER & AUDIO BAR -->
+  <header class="bg-slate-900/90 backdrop-blur border-b border-slate-800 sticky top-0 z-40">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+      
+      <!-- Brand -->
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+          <i class="fa-solid fa-microphone-lines text-lg"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-base sm:text-lg tracking-tight text-white leading-tight">Vocal Range Studio</h1>
+          <p class="text-[11px] text-slate-400" id="lbl-subtitle">Stimmumfang, Stimmfach & Live-Pitch</p>
+        </div>
+      </div>
+
+      <!-- Audio Controls & Language -->
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Input Device Selector -->
+        <select id="device-select" onchange="restartAudioIfRunning()" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl px-2.5 py-2 max-w-[155px] sm:max-w-[205px] truncate focus:outline-none focus:border-indigo-500">
+          <option value="">Standard Mikrofon / Interface</option>
+        </select>
+
+        <!-- Channel Selector (Scarlett Input 1 / Input 2) -->
+        <select id="channel-select" onchange="restartAudioIfRunning()" class="bg-slate-950 border border-slate-700 text-slate-200 text-xs rounded-xl px-2.5 py-2 focus:outline-none focus:border-indigo-500">
+          <option value="mix">Mono / Mix</option>
+          <option value="ch1">Input 1 (Left)</option>
+          <option value="ch2">Input 2 (Right)</option>
+        </select>
+
+        <!-- Start / Stop Button -->
+        <button id="btn-audio" onclick="toggleAudio()" class="px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white transition flex items-center gap-2 shadow-lg shadow-indigo-500/20">
+          <i class="fa-solid fa-microphone" id="icon-audio"></i>
+          <span id="txt-btn-audio">Mikrofon Starten</span>
+        </button>
+
+        <!-- Language Switch -->
+        <button onclick="toggleLanguage()" class="px-2.5 py-2 rounded-xl text-xs font-mono font-bold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 transition">
+          <span id="txt-lang">DE</span>
+        </button>
+
+        <!-- Vocal Tips Modal Trigger -->
+        <button onclick="toggleTipsModal(true)" class="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-800 hover:bg-slate-700 border border-slate-700 text-amber-400 transition flex items-center gap-1.5">
+          <i class="fa-solid fa-graduation-cap"></i>
+          <span class="hidden sm:inline" id="txt-btn-tips">Gesangstipps</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Live Input Signal Level Bar -->
+    <div class="max-w-5xl mx-auto px-4 pb-2 flex items-center gap-3">
+      <span class="text-[10px] font-mono uppercase text-slate-400 w-16" id="lbl-input-level">Pegel:</span>
+      <div class="flex-1 h-1.5 bg-slate-950 rounded-full overflow-hidden border border-slate-800">
+        <div id="input-meter-bar" class="h-full bg-indigo-500 w-0 transition-all duration-75"></div>
+      </div>
+      <span id="audio-status-text" class="text-[10px] font-mono text-slate-400">Bereit</span>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT -->
+  <main class="max-w-5xl mx-auto w-full px-4 py-6 flex-1 space-y-6">
+
+    <!-- Error / Status Toast Box -->
+    <div id="toast-box" class="hidden p-3.5 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-xs flex items-center justify-between">
+      <div class="flex items-center gap-2.5">
+        <i class="fa-solid fa-circle-exclamation text-rose-400 text-base"></i>
+        <span id="toast-msg">Fehlermeldung</span>
+      </div>
+      <button onclick="hideToast()" class="text-rose-300 hover:text-white px-2"><i class="fa-solid fa-xmark"></i></button>
+    </div>
+
+    <!-- =======================================================================
+         1. LIVE PITCH MONITOR & SCROLLING GRAPH
+         ======================================================================= -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 sm:p-6 space-y-5">
+      
+      <div class="flex flex-wrap items-center justify-between gap-4">
+        <!-- Current Note & Frequency -->
+        <div class="flex items-center gap-4">
+          <div class="w-24 h-24 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center">
+            <span id="live-note" class="text-4xl font-extrabold font-mono text-slate-500">--</span>
+            <span id="live-cents" class="text-[11px] font-mono text-slate-500 mt-0.5">0 Cents</span>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-xs font-mono uppercase text-indigo-400 font-bold" id="lbl-live-pitch">Aktuelle Tonhöhe</span>
+              <span id="live-register-badge" class="px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 text-[10px] font-mono">--</span>
+            </div>
+            <div id="live-freq" class="text-2xl sm:text-3xl font-bold font-mono text-white mt-0.5">0.0 Hz</div>
+            <p id="live-hint" class="text-xs text-slate-400 mt-1">Starte das Mikrofon und singe einen Ton (z. B. ein entspanntes „Aaaah“).</p>
+          </div>
+        </div>
+
+        <!-- Recording Mode Selector & Reset -->
+        <div class="flex flex-wrap items-center gap-2">
+          <div class="inline-flex rounded-xl bg-slate-950 p-1 border border-slate-800">
+            <button onclick="setCaptureMode('auto')" id="cap-auto" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 text-white transition">
+              <span id="lbl-cap-auto">Auto-Range</span>
+            </button>
+            <button onclick="setCaptureMode('low')" id="cap-low" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
+              <span id="lbl-cap-low">Nur Tiefsten</span>
+            </button>
+            <button onclick="setCaptureMode('high')" id="cap-high" class="px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition">
+              <span id="lbl-cap-high">Nur Höchsten</span>
+            </button>
+          </div>
+
+          <button onclick="resetVocalRange()" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition">
+            <i class="fa-solid fa-rotate-right mr-1"></i> <span id="btn-reset-range">Reset</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Real-time Scrolling Pitch Graph Canvas -->
+      <div class="space-y-1.5">
+        <div class="flex justify-between text-[11px] font-mono text-slate-400">
+          <span id="lbl-graph-title">Live-Tonhöhenverlauf (Notenlinie)</span>
+          <span id="lbl-graph-legend">Grün = Tiefster | Pink = Höchster</span>
+        </div>
+        <div class="w-full h-44 bg-slate-950 rounded-xl border border-slate-800 overflow-hidden relative">
+          <canvas id="pitch-graph-canvas" class="w-full h-full block"></canvas>
+        </div>
+      </div>
+
+      <!-- Interactive Reference Piano Strip (C2 to C7) -->
+      <div class="space-y-1.5">
+        <div class="flex justify-between text-[11px] font-mono text-slate-400">
+          <span id="lbl-piano-title">Stimmumfang-Klaviatur (Klick auf Taste = Referenzton abspielen)</span>
+          <span>C2 &mdash; C7</span>
+        </div>
+        <div id="piano-bar" class="w-full h-14 bg-slate-950 rounded-xl border border-slate-800 p-1.5 flex gap-0.5 overflow-x-auto">
+          <!-- Keys populated by JS -->
+        </div>
+      </div>
+    </section>
+
+    <!-- =======================================================================
+         2. MEASURED VOCAL RANGE & VOICE TYPE CLASSIFICATION
+         ======================================================================= -->
+    <section class="grid grid-cols-1 lg:grid-cols-3 gap-5">
+      
+      <!-- Left: Measured Stats Cards -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-arrows-up-down text-indigo-400"></i>
+          <span id="lbl-stats-title">Dein gemessener Stimmumfang</span>
+        </h2>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div class="bg-slate-950 border border-emerald-500/30 rounded-xl p-3.5 text-center">
+            <span class="block text-[10px] font-mono uppercase text-emerald-400" id="lbl-low-note">Tiefste Note</span>
+            <span id="stat-low-note" class="block text-3xl font-extrabold font-mono text-white mt-1">--</span>
+            <span id="stat-low-freq" class="block text-[11px] font-mono text-slate-400 mt-0.5">-- Hz</span>
+          </div>
+
+          <div class="bg-slate-950 border border-pink-500/30 rounded-xl p-3.5 text-center">
+            <span class="block text-[10px] font-mono uppercase text-pink-400" id="lbl-high-note">Höchste Note</span>
+            <span id="stat-high-note" class="block text-3xl font-extrabold font-mono text-white mt-1">--</span>
+            <span id="stat-high-freq" class="block text-[11px] font-mono text-slate-400 mt-0.5">-- Hz</span>
+          </div>
+        </div>
+
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3.5 flex items-center justify-between">
+          <div>
+            <span class="block text-[10px] font-mono uppercase text-slate-400" id="lbl-span">Gesamtumfang</span>
+            <span id="stat-span" class="text-base font-bold font-mono text-indigo-400">0 Oktaven, 0 Halbtöne</span>
+          </div>
+          <span id="stat-semitones" class="px-2.5 py-1 rounded-lg bg-indigo-500/15 text-indigo-300 font-mono text-xs font-bold">0 ST</span>
+        </div>
+      </div>
+
+      <!-- Right (2 Cols): Voice Type Result & Comparison Bars -->
+      <div class="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h2 class="text-sm font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-user-check text-indigo-400"></i>
+            <span id="lbl-voicetype-title">Stimmfach-Analyse (Klassifizierung)</span>
+          </h2>
+          <div class="flex flex-wrap items-center gap-2">
+            <div class="inline-flex rounded-lg bg-slate-950 p-0.5 border border-slate-800 text-[11px]">
+              <button onclick="setVoiceFilter('all')" id="vf-all" class="px-2 py-1 rounded-md font-bold bg-indigo-500 text-white transition">Alle</button>
+              <button onclick="setVoiceFilter('male')" id="vf-male" class="px-2 py-1 rounded-md font-semibold text-slate-400 hover:text-white transition">Männlich</button>
+              <button onclick="setVoiceFilter('female')" id="vf-female" class="px-2 py-1 rounded-md font-semibold text-slate-400 hover:text-white transition">Weiblich</button>
+            </div>
+            <span id="voicetype-badge" class="px-3 py-1 rounded-full bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 font-mono text-xs font-bold">
+              Noch keine Messung
+            </span>
+          </div>
+        </div>
+
+        <!-- Primary Detected Voice Type Card -->
+        <div id="voicetype-result-card" class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-2">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 id="vt-name" class="text-xl sm:text-2xl font-extrabold text-white">Singe deine tiefste & höchste Note</h3>
+            <span id="vt-standard-range" class="text-xs font-mono text-slate-400"></span>
+          </div>
+          <p id="vt-desc" class="text-xs sm:text-sm text-slate-300 leading-relaxed">
+            Sobald du mindestens zwei unterschiedliche Töne (tief und hoch) jeweils ca. 0,4 Sekunden sauber hältst, berechnet die App dein passendes Stimmfach über alle männlichen und weiblichen Stimmlagen (Bass, Bariton, Tenor, Kontra-Alt, Alt, Mezzosopran, Sopran & Koloratursopran).
+          </p>
+        </div>
+
+        <!-- All Voice Types Visual Range Comparison -->
+        <div id="voicetype-bars" class="space-y-2 pt-1">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+    </section>
+
+    <!-- =======================================================================
+         3. QUICK ACTIONABLE COACHING TIPS FOR REACHING HIGHER & LOWER NOTES
+         ======================================================================= -->
+    <section class="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2">
+          <i class="fa-solid fa-lightbulb text-amber-400"></i>
+          <span id="lbl-quick-tips-title">Tipps zum Singen & Erweitern deiner Range</span>
+        </h2>
+        <button onclick="toggleTipsModal(true)" class="text-xs text-indigo-400 hover:text-indigo-300 font-semibold">
+          <span id="lbl-more-tips">Ausführlicher Gesangs-Guide &rarr;</span>
+        </button>
+      </div>
+
+      <div id="quick-tips-grid" class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-300">
+        <!-- Populated by JS in DE/EN -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- DETAILED VOCAL COACHING MODAL -->
+  <div id="tips-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-2xl w-full max-h-[88vh] flex flex-col overflow-hidden shadow-2xl">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+        <h3 class="font-bold text-base text-white flex items-center gap-2">
+          <i class="fa-solid fa-graduation-cap text-amber-400"></i>
+          <span id="tips-modal-title">Gesangstechnik: Höhere & tiefere Töne sicher erreichen</span>
+        </h3>
+        <button onclick="toggleTipsModal(false)" class="text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+      
+      <div id="tips-modal-body" class="p-6 overflow-y-auto space-y-4 text-xs sm:text-sm text-slate-300 leading-relaxed">
+        <!-- Populated dynamically -->
+      </div>
+
+      <div class="px-6 py-3 border-t border-slate-800 flex justify-end">
+        <button onclick="toggleTipsModal(false)" class="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs">
+          <span id="btn-tips-close">Schließen</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+       CONFIGURATION, VOICE TYPES & TRANSLATIONS
+       ========================================================================= */
+    let lang = 'de';
+    let captureMode = 'auto'; // 'auto' | 'low' | 'high'
+    let voiceFilter = 'all';  // 'all' | 'male' | 'female'
+
+    // MIDI Range of Piano Strip & Graph: C2 (36) to C7 (96) to cover Bass through Coloratura Soprano
+    const MIN_MIDI = 36; // C2 (~65.4 Hz)
+    const MAX_MIDI = 96; // C7 (~2093.0 Hz)
+
+    const VOICE_TYPES = [
+      {
+        id: 'bass',
+        group: 'male',
+        minMidi: 40, // E2
+        maxMidi: 64, // E4
+        rangeStr: 'E2 – E4',
+        de: {
+          name: 'Bass (Männlich)',
+          desc: 'Die tiefste männliche Singstimme mit dunklem, vollem und resonantem Fundament. Typisch für tiefe Rock-, Country- oder klassische Bass-Passagen.'
+        },
+        en: {
+          name: 'Bass (Male)',
+          desc: 'The lowest male voice type with a dark, heavy, and resonant foundation. Ideal for deep rock, country, and classical bass lines.'
+        }
+      },
+      {
+        id: 'baritone',
+        group: 'male',
+        minMidi: 45, // A2
+        maxMidi: 69, // A4
+        rangeStr: 'A2 – A4',
+        de: {
+          name: 'Bariton (Männlich)',
+          desc: 'Die häufigste männliche Stimmlage – warm, kraftvoll in der Mittellage und flexibel zwischen tiefem Fundament und rockigen Höhen (z. B. Eddie Vedder, Johnny Cash, James Hetfield).'
+        },
+        en: {
+          name: 'Baritone (Male)',
+          desc: 'The most common male voice type—warm and powerful in the middle register with solid lows and strong rock highs (e.g., Eddie Vedder, Johnny Cash, James Hetfield).'
+        }
+      },
+      {
+        id: 'tenor',
+        group: 'male',
+        minMidi: 48, // C3
+        maxMidi: 72, // C5
+        rangeStr: 'C3 – C5',
+        de: {
+          name: 'Tenor (Männlich)',
+          desc: 'Die höchste reguläre männliche Stimmlage mit strahlendem, durchsetzungsstarkem Klang in den Höhen (z. B. Freddie Mercury, Chester Bennington, Bruno Mars).'
+        },
+        en: {
+          name: 'Tenor (Male)',
+          desc: 'The highest standard male voice type with bright, ringing projection in the upper register (e.g., Freddie Mercury, Chester Bennington, Bruno Mars).'
+        }
+      },
+      {
+        id: 'contralto',
+        group: 'female',
+        minMidi: 52, // E3
+        maxMidi: 76, // E5
+        rangeStr: 'E3 – E5',
+        de: {
+          name: 'Kontra-Alt / Tiefer Alt (Weiblich)',
+          desc: 'Die seltenste und tiefste weibliche Stimmlage mit außergewöhnlich dunkler, voller Brustresonanz (z. B. Cher, Toni Braxton, Tracy Chapman).'
+        },
+        en: {
+          name: 'Contralto (Female)',
+          desc: 'The rarest and deepest female voice type with a rich, dark, chest-dominant timbre (e.g., Cher, Toni Braxton, Tracy Chapman).'
+        }
+      },
+      {
+        id: 'alto',
+        group: 'female',
+        minMidi: 53, // F3
+        maxMidi: 77, // F5
+        rangeStr: 'F3 – F5',
+        de: {
+          name: 'Alt (Weiblich)',
+          desc: 'Warme, samtige und ausdrucksstarke weibliche Stimmlage mit starker Tiefe und vollem Klang in der Mittellage (z. B. Adele, Amy Winehouse, Lana Del Rey).'
+        },
+        en: {
+          name: 'Alto (Female)',
+          desc: 'Warm, velvety, and expressive female voice type with strong low notes and lush middle resonance (e.g., Adele, Amy Winehouse, Lana Del Rey).'
+        }
+      },
+      {
+        id: 'mezzo',
+        group: 'female',
+        minMidi: 57, // A3
+        maxMidi: 81, // A5
+        rangeStr: 'A3 – A5',
+        de: {
+          name: 'Mezzosopran (Weiblich)',
+          desc: 'Die häufigste und vielseitigste weibliche Stimmlage zwischen Alt und Sopran – kombiniert kraftvolle Tiefen mit strahlenden Höhen (z. B. Lady Gaga, Beyoncé, Hayley Williams).'
+        },
+        en: {
+          name: 'Mezzo-Soprano (Female)',
+          desc: 'The most versatile female voice type bridging Alto and Soprano—blending powerful chest resonance with bright highs (e.g., Lady Gaga, Beyoncé, Hayley Williams).'
+        }
+      },
+      {
+        id: 'soprano',
+        group: 'female',
+        minMidi: 60, // C4
+        maxMidi: 84, // C6
+        rangeStr: 'C4 – C6',
+        de: {
+          name: 'Sopran (Weiblich)',
+          desc: 'Hohe, helle weibliche Stimmlage mit klarer, müheloser Leichtigkeit in den oberen Oktaven (z. B. Whitney Houston, Céline Dion, Kelly Clarkson).'
+        },
+        en: {
+          name: 'Soprano (Female)',
+          desc: 'High, bright female voice type with clear, effortless agility in the upper octaves (e.g., Whitney Houston, Céline Dion, Kelly Clarkson).'
+        }
+      },
+      {
+        id: 'coloratura',
+        group: 'female',
+        minMidi: 62, // D4
+        maxMidi: 91, // G6
+        rangeStr: 'D4 – G6+',
+        de: {
+          name: 'Koloratursopran (Weiblich)',
+          desc: 'Die höchste weibliche Stimmlage mit extremer Beweglichkeit und mühelosem Zugang in die oberste Kopfstimme / Pfeifregister (z. B. Mariah Carey, Ariana Grande, Minnie Riperton).'
+        },
+        en: {
+          name: 'Coloratura Soprano (Female)',
+          desc: 'The highest female voice type with extreme agility and effortless reach into the top head voice / whistle register (e.g., Mariah Carey, Ariana Grande, Minnie Riperton).'
+        }
+      }
+    ];
+
+    const TEXT = {
+      de: {
+        subtitle: "Stimmumfang, Stimmfach & Live-Pitch",
+        startMic: "Mikrofon Starten",
+        stopMic: "Mikrofon Stoppen",
+        tipsBtn: "Gesangstipps",
+        level: "Pegel:",
+        ready: "Bereit",
+        active: "Aktiv",
+        livePitch: "Aktuelle Tonhöhe",
+        liveHintWait: "Starte das Mikrofon und singe einen Ton (z. B. ein entspanntes „Aaaah“).",
+        liveHintSinging: "Halte den Ton ruhig – er wird automatisch in deinen Stimmumfang übernommen.",
+        capAuto: "Auto-Range",
+        capLow: "Nur Tiefsten",
+        capHigh: "Nur Höchsten",
+        reset: "Reset",
+        graphTitle: "Live-Tonhöhenverlauf (Notenlinie)",
+        graphLegend: "Grün = Tiefster | Pink = Höchster",
+        pianoTitle: "Stimmumfang-Klaviatur (Klick auf Taste = Referenzton abspielen)",
+        statsTitle: "Dein gemessener Stimmumfang",
+        lowNote: "Tiefste Note",
+        highNote: "Höchste Note",
+        span: "Gesamtumfang",
+        vtTitle: "Stimmfach-Analyse (Klassifizierung)",
+        vtPendingBadge: "Noch keine Messung",
+        vtPendingTitle: "Singe deine tiefste & höchste Note",
+        vtPendingDesc: "Sobald du mindestens zwei unterschiedliche Töne (tief und hoch) jeweils ca. 0,4 Sekunden sauber hältst, berechnet die App dein passendes Stimmfach über alle männlichen und weiblichen Stimmlagen.",
+        filterAll: "Alle",
+        filterMale: "Männlich",
+        filterFemale: "Weiblich",
+        quickTipsTitle: "Tipps zum Singen & Erweitern deiner Range",
+        moreTips: "Ausführlicher Gesangs-Guide →",
+        tipsModalTitle: "Gesangstechnik: Höhere & tiefere Töne sicher erreichen",
+        tipsClose: "Schließen",
+        quickCards: [
+          {
+            icon: "fa-arrow-up text-pink-400",
+            title: "Höhere Töne ohne Pressen",
+            text: "Ziehe die Bruststimme nicht mit Gewalt nach oben. Wechsle ab dem Übergangspunkt (Passaggio) in die Mischstimme (Mixed Voice) und denke den Ton eher nach vorne statt nach oben."
+          },
+          {
+            icon: "fa-arrow-down text-emerald-400",
+            title: "Tiefe Töne voll & stabil singen",
+            text: "Senke das Kinn NICHT auf die Brust (das drückt auf den Kehlkopf). Halte den Kopf gerade, entspanne den Kiefer und nutze einen ruhigen, gleichmäßigen Luftstrom."
+          },
+          {
+            icon: "fa-lungs text-indigo-400",
+            title: "Atemstütze & Scarlett-Setup",
+            text: "Atme tief in den Bauch/Flanken statt die Schultern hochzuziehen. Am Scarlett 2i2: 48V Phantomspeisung nur für Kondensatormikros aktivieren und Gain so einstellen, dass laute Töne nicht clippen."
+          }
+        ],
+        modalHtml: `
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-indigo-400">1. So misst du deinen echten Stimmumfang richtig</h4>
+            <p>Wärme deine Stimme vorher 3–5 Minuten leicht auf (z. B. mit Lippenflattern / Lip Trills). Singe dann auf einem offenen Vokal wie <strong>„Aaaah“</strong> oder <strong>„Ooooh“</strong> von der Wohlfühllage schrittweise nach unten bis zum tiefsten noch klingenden Ton (kein reines Krächzen/Vocal Fry) und danach nach oben bis zum höchsten kontrollierten Ton (inkl. Kopfstimme/Falsett).</p>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-pink-400">2. Höhere Noten erreichen (Passaggio & Mixed Voice)</h4>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><strong>Kehlkopf entspannen:</strong> Wenn es im Hals eng wird, hilft ein leichtes inneres Gähn-Gefühl, um den Rachenraum zu öffnen.</li>
+              <li><strong>Vokal-Modifikation:</strong> Sehr offene Vokale wie „A“ oder „I“ werden in der Höhe schwer. Runde sie leicht ab (ein „A“ wird eher zu einem offenen „O“, ein „I“ zu einem „Ü“).</li>
+              <li><strong>Wenig Luftdruck, gute Stütze:</strong> Hohe Töne brauchen nicht mehr Luft, sondern gezielteren Stimmlippenschluss und gleichmäßigen Halt aus dem Zwerchfell.</li>
+            </ul>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-emerald-400">3. Tiefere Noten erreichen</h4>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><strong>Kopfhaltung:</strong> Blick geradeaus halten. Das Kinn nach unten zu drücken blockiert die tiefe Schwingung der Stimmlippen.</li>
+              <li><strong>Brustresonanz nutzen:</strong> Stelle dir vor, der Ton vibriert im Brustbein, und reduziere die Lautstärke leicht – tiefe Töne lassen sich nicht erzwingen.</li>
+            </ul>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-amber-400">4. Mikrofon-Tipps (Handy & Focusrite Scarlett 2i2)</h4>
+            <p><strong>Smartphone:</strong> Halte ca. 15–20 cm Abstand und singe leicht am Mikrofon vorbei, um Pop-Geräusche zu vermeiden.<br>
+            <strong>Scarlett 2i2:</strong> Stelle sicher, dass der <strong>INST</strong>-Schalter am Gesangskanal <strong>ausgeschaltet</strong> ist (Line/Mic-Modus) und nutze bei Kondensatormikrofonen die <strong>48V</strong>-Taste.</p>
+          </div>
+        `
+      },
+      en: {
+        subtitle: "Vocal Range, Voice Type & Live Pitch",
+        startMic: "Start Microphone",
+        stopMic: "Stop Microphone",
+        tipsBtn: "Vocal Tips",
+        level: "Level:",
+        ready: "Ready",
+        active: "Active",
+        livePitch: "Current Pitch",
+        liveHintWait: "Start the microphone and sing a steady note (e.g. a relaxed 'Aaaah').",
+        liveHintSinging: "Hold the note steady—it will automatically update your vocal range.",
+        capAuto: "Auto-Range",
+        capLow: "Lowest Only",
+        capHigh: "Highest Only",
+        reset: "Reset",
+        graphTitle: "Live Pitch Ribbon (Note History)",
+        graphLegend: "Green = Lowest | Pink = Highest",
+        pianoTitle: "Vocal Range Keyboard (Click any key to hear reference pitch)",
+        statsTitle: "Your Measured Vocal Range",
+        lowNote: "Lowest Note",
+        highNote: "Highest Note",
+        span: "Total Span",
+        vtTitle: "Voice Type Classification",
+        vtPendingBadge: "No Measurement Yet",
+        vtPendingTitle: "Sing your lowest & highest notes",
+        vtPendingDesc: "Once you sustain at least two distinct notes (low and high) for ~0.4 seconds each, the app will classify your voice type across all male and female vocal ranges.",
+        filterAll: "All",
+        filterMale: "Male",
+        filterFemale: "Female",
+        quickTipsTitle: "Tips for Singing & Expanding Your Range",
+        moreTips: "Full Vocal Coaching Guide →",
+        tipsModalTitle: "Vocal Technique: Reaching Higher & Lower Notes Safely",
+        tipsClose: "Close",
+        quickCards: [
+          {
+            icon: "fa-arrow-up text-pink-400",
+            title: "Higher Notes Without Straining",
+            text: "Don't push chest voice up by force. Transition into Mixed Voice around your passaggio and place the resonance forward rather than reaching upward with your chin."
+          },
+          {
+            icon: "fa-arrow-down text-emerald-400",
+            title: "Full & Stable Low Notes",
+            text: "Do NOT tuck your chin into your chest—this compresses your larynx. Keep your head level, relax your jaw, and use a calm, steady airflow."
+          },
+          {
+            icon: "fa-lungs text-indigo-400",
+            title: "Breath Support & Scarlett Setup",
+            text: "Breathe low into your ribs/belly instead of raising your shoulders. On your Scarlett 2i2: turn INST off for mics, enable 48V only for condensers, and keep gain out of the red."
+          }
+        ],
+        modalHtml: `
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-indigo-400">1. How to Measure Your True Vocal Range</h4>
+            <p>Warm up gently for 3–5 minutes (e.g. lip trills). Sing an open vowel like <strong>'Aaaah'</strong> or <strong>'Ooooh'</strong> down to your lowest resonant note (avoiding pure vocal fry) and then up to your highest controlled note (including head voice / falsetto).</p>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-pink-400">2. Reaching Higher Notes (Passaggio & Mixed Voice)</h4>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><strong>Relax the Larynx:</strong> Use a gentle 'pre-yawn' sensation to keep the throat open as pitch rises.</li>
+              <li><strong>Vowel Modification:</strong> Slightly round wide vowels ('Ah' toward 'Aw', 'Ee' toward 'Uh') on high notes to reduce tension.</li>
+              <li><strong>Steady Support, Less Air Blast:</strong> High notes require less air volume and better vocal cord closure supported by your diaphragm.</li>
+            </ul>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-emerald-400">3. Reaching Lower Notes</h4>
+            <ul class="list-disc pl-5 space-y-1">
+              <li><strong>Head Alignment:</strong> Look straight ahead. Dropping your chin restricts vocal fold vibration at the bottom of your range.</li>
+              <li><strong>Don't Force Volume:</strong> Let chest resonance carry the tone gently; pushing air makes low notes go sharp or break.</li>
+            </ul>
+          </div>
+          <div class="bg-slate-950 p-4 rounded-xl border border-slate-800 space-y-1.5">
+            <h4 class="font-bold text-amber-400">4. Microphone Tips (Smartphone & Scarlett 2i2)</h4>
+            <p><strong>Smartphone:</strong> Keep 15–20 cm distance and sing slightly off-axis to prevent plosive distortion.<br>
+            <strong>Scarlett 2i2:</strong> Make sure <strong>INST</strong> is turned <strong>OFF</strong> on your vocal channel and engage <strong>48V</strong> if using a condenser microphone.</p>
+          </div>
+        `
+      }
+    };
+
+    /* =========================================================================
+       AUDIO ENGINE (SCARLETT 2I2 & MOBILE MICROPHONE WITH SMART FALLBACK)
+       ========================================================================= */
+    let audioCtx = null;
+    let mediaStream = null;
+    let analyser = null;
+    let isRunning = false;
+    let wakeLock = null;
+
+    const BUFFER_SIZE = 4096;
+    let timeBuffer = new Float32Array(BUFFER_SIZE);
+    let rmsLevel = 0;
+
+    // Live pitch & vocal range state
+    let currentFreq = 0;
+    let currentMidiFloat = 0;
+    let currentMidi = 0;
+    let currentNoteName = '--';
+    let currentCents = 0;
+
+    let lowestMidi = null;
+    let lowestFreq = null;
+    let highestMidi = null;
+    let highestFreq = null;
+
+    // Stability filter (requires sustained frames before updating min/max range)
+    let candidateMidi = null;
+    let candidateFrames = 0;
+    const REQUIRED_HOLD_FRAMES = 14; // ~0.25s steady hold
+
+    const HISTORY_LEN = 180;
+    let pitchHistory = new Array(HISTORY_LEN).fill(null);
+
+    async function populateAudioDevices() {
+      try {
+        if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter(d => d.kind === 'audioinput');
+        const select = document.getElementById('device-select');
+        const prev = select.value;
+        select.innerHTML = '';
+
+        if (inputs.length === 0) {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.text = lang === 'de' ? 'Standard Mikrofon / Interface' : 'Default Microphone / Interface';
+          select.appendChild(opt);
+          return;
+        }
+
+        inputs.forEach((dev, idx) => {
+          const opt = document.createElement('option');
+          opt.value = dev.deviceId;
+          opt.text = dev.label || `Audio Input ${idx + 1}`;
+          select.appendChild(opt);
+        });
+
+        if (prev && [...select.options].some(o => o.value === prev)) {
+          select.value = prev;
+        }
+      } catch (e) {}
+    }
+
+    async function toggleAudio() {
+      if (isRunning) {
+        stopAudio();
+      } else {
+        await startAudio();
+      }
+    }
+
+    async function restartAudioIfRunning() {
+      if (isRunning) {
+        stopAudio();
+        await startAudio();
+      }
+    }
+
+    async function startAudio() {
+      hideToast();
+      try {
+        if (!window.isSecureContext && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
+          throw new Error(lang === 'de'
+            ? "Mikrofon erfordert HTTPS! Bitte öffne die Seite über eine https:// Adresse."
+            : "Microphone requires HTTPS! Please open this page via an https:// URL.");
+        }
+
+        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+          throw new Error(lang === 'de'
+            ? "Browser unterstützt keinen Mikrofon-Zugriff. Bitte öffne den Link direkt in Safari oder Chrome."
+            : "Browser does not support microphone access. Please open directly in Safari or Chrome.");
+        }
+
+        const deviceId = document.getElementById('device-select').value;
+        const studioConstraints = {
+          echoCancellation: false,
+          noiseSuppression: false,
+          autoGainControl: false
+        };
+        if (deviceId) {
+          studioConstraints.deviceId = { ideal: deviceId };
+        }
+
+        // Try raw studio constraints first (best for Scarlett 2i2), fallback to basic audio: true for mobile compatibility
+        try {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: studioConstraints });
+        } catch (firstErr) {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        }
+
+        await populateAudioDevices();
+
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        if (audioCtx.state === 'suspended') {
+          await audioCtx.resume();
+        }
+
+        const source = audioCtx.createMediaStreamSource(mediaStream);
+        analyser = audioCtx.createAnalyser();
+        analyser.fftSize = BUFFER_SIZE * 2;
+        analyser.smoothingTimeConstant = 0.15;
+
+        const chChoice = document.getElementById('channel-select').value;
+        const chCount = source.channelCount || 2;
+
+        if ((chChoice === 'ch1' || chChoice === 'ch2') && chCount >= 2) {
+          const splitter = audioCtx.createChannelSplitter(2);
+          source.connect(splitter);
+          splitter.connect(analyser, chChoice === 'ch1' ? 0 : 1, 0);
+        } else {
+          source.connect(analyser);
+        }
+
+        isRunning = true;
+        updateAudioButtonUI();
+        requestWakeLock();
+      } catch (err) {
+        console.error(err);
+        showToast(err.message || (lang === 'de' ? "Mikrofon-Zugriff verweigert." : "Microphone access denied."));
+        stopAudio();
+      }
+    }
+
+    function stopAudio() {
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+      if (audioCtx) {
+        audioCtx.close().catch(() => {});
+        audioCtx = null;
+      }
+      analyser = null;
+      isRunning = false;
+      rmsLevel = 0;
+      currentFreq = 0;
+      updateAudioButtonUI();
+      if (wakeLock) {
+        wakeLock.release().catch(() => {});
+        wakeLock = null;
+      }
+    }
+
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (e) {}
+    }
+
+    function updateAudioButtonUI() {
+      const btn = document.getElementById('btn-audio');
+      const txt = document.getElementById('txt-btn-audio');
+      const status = document.getElementById('audio-status-text');
+      const t = TEXT[lang];
+
+      if (isRunning) {
+        btn.className = "px-4 py-2 rounded-xl text-xs font-bold bg-rose-500 hover:bg-rose-400 text-white transition flex items-center gap-2 shadow-lg shadow-rose-500/20";
+        txt.innerText = t.stopMic;
+        status.innerText = t.active;
+        status.className = "text-[10px] font-mono text-indigo-400";
+      } else {
+        btn.className = "px-4 py-2 rounded-xl text-xs font-bold bg-indigo-500 hover:bg-indigo-400 text-white transition flex items-center gap-2 shadow-lg shadow-indigo-500/20";
+        txt.innerText = t.startMic;
+        status.innerText = t.ready;
+        status.className = "text-[10px] font-mono text-slate-400";
+        document.getElementById('input-meter-bar').style.width = '0%';
+      }
+    }
+
+    /* =========================================================================
+       AUTOCORRELATION PITCH DETECTION FOR HUMAN VOICE (55 HZ – 2100 HZ)
+       ========================================================================= */
+    function detectVocalPitch(buf, sampleRate) {
+      let size = buf.length;
+      let rms = 0;
+      for (let i = 0; i < size; i++) rms += buf[i] * buf[i];
+      rms = Math.sqrt(rms / size);
+      rmsLevel = rms;
+
+      if (rms < 0.008) return -1; // Noise threshold
+
+      let r1 = 0, r2 = size - 1, thres = 0.2 * rms;
+      for (let i = 0; i < size / 2; i++) {
+        if (Math.abs(buf[i]) > thres) { r1 = i; break; }
+      }
+      for (let i = 1; i < size / 2; i++) {
+        if (Math.abs(buf[size - i]) > thres) { r2 = size - i; break; }
+      }
+
+      const trimmed = buf.slice(r1, r2);
+      size = trimmed.length;
+      if (size < 64) return -1;
+
+      const c = new Float32Array(size);
+      for (let i = 0; i < size; i++) {
+        let sum = 0;
+        for (let j = 0; j < size - i; j++) {
+          sum += trimmed[j] * trimmed[j + i];
+        }
+        c[i] = sum;
+      }
+
+      let d = 0;
+      while (d < size - 1 && c[d] > c[d + 1]) d++;
+
+      let maxval = -1, maxpos = -1;
+      for (let i = d; i < size; i++) {
+        if (c[i] > maxval) {
+          maxval = c[i];
+          maxpos = i;
+        }
+      }
+
+      if (maxpos <= 0 || maxval < 0.35 * c[0]) return -1; // Require strong periodicity (voiced sound)
+
+      let T0 = maxpos;
+      if (maxpos > 0 && maxpos < size - 1) {
+        const x1 = c[maxpos - 1], x2 = c[maxpos], x3 = c[maxpos + 1];
+        const a = (x1 + x3 - 2 * x2) / 2;
+        const b = (x3 - x1) / 2;
+        if (a !== 0) T0 = T0 - b / (2 * a);
+      }
+
+      const freq = sampleRate / T0;
+      return (freq >= 55 && freq <= 2100) ? freq : -1;
+    }
+
+    function midiToNoteName(midi) {
+      const names = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+      const name = names[((midi % 12) + 12) % 12];
+      const oct = Math.floor(midi / 12) - 1;
+      return `${name}${oct}`;
+    }
+
+    function midiToFreq(midi) {
+      return 440 * Math.pow(2, (midi - 69) / 12);
+    }
+
+    function getRegisterLabel(midi) {
+      if (midi < 48) return lang === 'de' ? 'Tiefe Bruststimme' : 'Low Chest';
+      if (midi < 60) return lang === 'de' ? 'Bruststimme' : 'Chest Voice';
+      if (midi < 69) return lang === 'de' ? 'Mischstimme / Passaggio' : 'Mixed / Passaggio';
+      if (midi < 84) return lang === 'de' ? 'Kopfstimme / Falsett' : 'Head / Falsetto';
+      return lang === 'de' ? 'Hohe Kopfstimme / Pfeifregister' : 'High Head / Whistle Register';
+    }
+
+    function processFrame() {
+      if (!isRunning || !analyser || !audioCtx) {
+        pitchHistory.push(null);
+        if (pitchHistory.length > HISTORY_LEN) pitchHistory.shift();
+        return;
+      }
+
+      analyser.getFloatTimeDomainData(timeBuffer);
+      const freq = detectVocalPitch(timeBuffer, audioCtx.sampleRate);
+
+      // Update live level meter
+      const pct = Math.min(100, Math.round(rmsLevel * 420));
+      const meter = document.getElementById('input-meter-bar');
+      meter.style.width = pct + '%';
+      meter.className = pct > 88 ? 'h-full bg-rose-500 transition-all duration-75' : 'h-full bg-indigo-500 transition-all duration-75';
+
+      if (freq > 0) {
+        currentFreq = freq;
+        currentMidiFloat = 69 + 12 * Math.log2(freq / 440);
+        currentMidi = Math.round(currentMidiFloat);
+        currentNoteName = midiToNoteName(currentMidi);
+        const exactFreq = midiToFreq(currentMidi);
+        currentCents = 1200 * Math.log2(freq / exactFreq);
+
+        pitchHistory.push(currentMidiFloat);
+        if (pitchHistory.length > HISTORY_LEN) pitchHistory.shift();
+
+        // Stability check before committing new Lowest / Highest note
+        if (candidateMidi === currentMidi) {
+          candidateFrames++;
+          if (candidateFrames >= REQUIRED_HOLD_FRAMES) {
+            commitStableNote(currentMidi, freq);
+          }
+        } else {
+          candidateMidi = currentMidi;
+          candidateFrames = 1;
+        }
+      } else {
+        currentFreq = 0;
+        candidateMidi = null;
+        candidateFrames = 0;
+        pitchHistory.push(null);
+        if (pitchHistory.length > HISTORY_LEN) pitchHistory.shift();
+      }
+
+      updateLiveReadoutDOM();
+    }
+
+    function commitStableNote(midi, freq) {
+      let changed = false;
+
+      if (captureMode === 'auto' || captureMode === 'low') {
+        if (lowestMidi === null || midi < lowestMidi) {
+          lowestMidi = midi;
+          lowestFreq = midiToFreq(midi);
+          changed = true;
+        }
+      }
+
+      if (captureMode === 'auto' || captureMode === 'high') {
+        if (highestMidi === null || midi > highestMidi) {
+          highestMidi = midi;
+          highestFreq = midiToFreq(midi);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        updateStatsAndClassification();
+        updatePianoHighlights();
+      }
+    }
+
+    function updateLiveReadoutDOM() {
+      const noteEl = document.getElementById('live-note');
+      const centsEl = document.getElementById('live-cents');
+      const freqEl = document.getElementById('live-freq');
+      const regEl = document.getElementById('live-register-badge');
+      const hintEl = document.getElementById('live-hint');
+
+      if (currentFreq > 0) {
+        noteEl.innerText = currentNoteName;
+        noteEl.className = "text-4xl font-extrabold font-mono text-indigo-400";
+        centsEl.innerText = `${currentCents >= 0 ? '+' : ''}${currentCents.toFixed(0)} Cents`;
+        freqEl.innerText = `${currentFreq.toFixed(1)} Hz`;
+        regEl.innerText = getRegisterLabel(currentMidi);
+        regEl.className = "px-2 py-0.5 rounded-md bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 text-[10px] font-mono";
+        hintEl.innerText = TEXT[lang].liveHintSinging;
+      } else {
+        noteEl.innerText = "--";
+        noteEl.className = "text-4xl font-extrabold font-mono text-slate-500";
+        centsEl.innerText = "0 Cents";
+        freqEl.innerText = "0.0 Hz";
+        regEl.innerText = "--";
+        regEl.className = "px-2 py-0.5 rounded-md bg-slate-800 text-slate-400 text-[10px] font-mono";
+        hintEl.innerText = TEXT[lang].liveHintWait;
+      }
+    }
+
+    /* =========================================================================
+       VOCAL RANGE STATS & VOICE TYPE CLASSIFICATION
+       ========================================================================= */
+    function setCaptureMode(mode) {
+      captureMode = mode;
+      ['auto', 'low', 'high'].forEach(m => {
+        const btn = document.getElementById(`cap-${m}`);
+        btn.className = m === mode
+          ? "px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-500 text-white transition"
+          : "px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-white transition";
+      });
+    }
+
+    function resetVocalRange() {
+      lowestMidi = null;
+      lowestFreq = null;
+      highestMidi = null;
+      highestFreq = null;
+      candidateMidi = null;
+      candidateFrames = 0;
+      pitchHistory.fill(null);
+
+      document.getElementById('stat-low-note').innerText = '--';
+      document.getElementById('stat-low-freq').innerText = '-- Hz';
+      document.getElementById('stat-high-note').innerText = '--';
+      document.getElementById('stat-high-freq').innerText = '-- Hz';
+      document.getElementById('stat-span').innerText = lang === 'de' ? '0 Oktaven, 0 Halbtöne' : '0 Octaves, 0 Semitones';
+      document.getElementById('stat-semitones').innerText = '0 ST';
+
+      const t = TEXT[lang];
+      document.getElementById('voicetype-badge').innerText = t.vtPendingBadge;
+      document.getElementById('vt-name').innerText = t.vtPendingTitle;
+      document.getElementById('vt-standard-range').innerText = '';
+      document.getElementById('vt-desc').innerText = t.vtPendingDesc;
+
+      updatePianoHighlights();
+      renderVoiceTypeBars(null);
+    }
+
+    function updateStatsAndClassification() {
+      if (lowestMidi !== null) {
+        document.getElementById('stat-low-note').innerText = midiToNoteName(lowestMidi);
+        document.getElementById('stat-low-freq').innerText = `${lowestFreq.toFixed(1)} Hz`;
+      }
+      if (highestMidi !== null) {
+        document.getElementById('stat-high-note').innerText = midiToNoteName(highestMidi);
+        document.getElementById('stat-high-freq').innerText = `${highestFreq.toFixed(1)} Hz`;
+      }
+
+      if (lowestMidi !== null && highestMidi !== null && highestMidi >= lowestMidi) {
+        const semitones = highestMidi - lowestMidi;
+        const octaves = Math.floor(semitones / 12);
+        const remSemi = semitones % 12;
+
+        document.getElementById('stat-span').innerText = lang === 'de'
+          ? `${octaves} Oktave${octaves === 1 ? '' : 'n'}, ${remSemi} Halbton${remSemi === 1 ? '' : 'töne'}`
+          : `${octaves} Octave${octaves === 1 ? '' : 's'}, ${remSemi} Semitone${remSemi === 1 ? '' : 's'}`;
+        document.getElementById('stat-semitones').innerText = `${semitones} ST`;
+
+        if (semitones >= 4) {
+          classifyVoiceType(lowestMidi, highestMidi);
+        }
+      }
+    }
+
+    function classifyVoiceType(lowM, highM) {
+      const candidates = voiceFilter === 'all'
+        ? VOICE_TYPES
+        : VOICE_TYPES.filter(vt => vt.group === voiceFilter);
+
+      const userCenter = (lowM + highM) / 2;
+      let bestMatch = candidates[0];
+      let bestScore = -Infinity;
+
+      candidates.forEach(vt => {
+        const vtCenter = (vt.minMidi + vt.maxMidi) / 2;
+        const centerDiff = Math.abs(userCenter - vtCenter);
+        const lowDiff = Math.abs(lowM - vt.minMidi);
+        const highDiff = Math.abs(highM - vt.maxMidi);
+
+        // Weighted score: midpoint + bottom + top proximity
+        const penalty = centerDiff * 1.4 + lowDiff * 0.9 + highDiff * 0.9;
+        const score = Math.max(10, Math.round(100 - penalty * 3.2));
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = vt;
+        }
+      });
+
+      const info = bestMatch[lang];
+      document.getElementById('voicetype-badge').innerText = `${info.name} (${bestScore}% Match)`;
+      document.getElementById('vt-name').innerText = info.name;
+      document.getElementById('vt-standard-range').innerText = `${lang === 'de' ? 'Typischer Bereich' : 'Typical Range'}: ${bestMatch.rangeStr}`;
+      document.getElementById('vt-desc').innerText = info.desc;
+
+      renderVoiceTypeBars(bestMatch.id);
+    }
+
+    function setVoiceFilter(filter) {
+      voiceFilter = filter;
+      ['all', 'male', 'female'].forEach(f => {
+        const btn = document.getElementById(`vf-${f}`);
+        btn.className = f === filter
+          ? "px-2 py-1 rounded-md font-bold bg-indigo-500 text-white transition"
+          : "px-2 py-1 rounded-md font-semibold text-slate-400 hover:text-white transition";
+      });
+      if (lowestMidi !== null && highestMidi !== null && highestMidi >= lowestMidi && (highestMidi - lowestMidi) >= 4) {
+        classifyVoiceType(lowestMidi, highestMidi);
+      } else {
+        renderVoiceTypeBars(null);
+      }
+    }
+
+    function renderVoiceTypeBars(activeId) {
+      const container = document.getElementById('voicetype-bars');
+      container.innerHTML = '';
+
+      const totalSpan = MAX_MIDI - MIN_MIDI;
+      const visibleTypes = voiceFilter === 'all'
+        ? VOICE_TYPES
+        : VOICE_TYPES.filter(vt => vt.group === voiceFilter);
+
+      visibleTypes.forEach(vt => {
+        const isBest = vt.id === activeId;
+        const leftPct = ((vt.minMidi - MIN_MIDI) / totalSpan) * 100;
+        const widthPct = ((vt.maxMidi - vt.minMidi) / totalSpan) * 100;
+        const barColor = isBest
+          ? (vt.group === 'female' ? 'bg-pink-500' : 'bg-indigo-500')
+          : 'bg-slate-700';
+
+        const row = document.createElement('div');
+        row.className = "flex items-center gap-3 text-xs";
+        row.innerHTML = `
+          <div class="w-32 sm:w-40 font-semibold truncate ${isBest ? (vt.group === 'female' ? 'text-pink-400 font-bold' : 'text-indigo-400 font-bold') : 'text-slate-400'}">
+            ${vt[lang].name}
+          </div>
+          <div class="flex-1 h-4 bg-slate-950 rounded-full border border-slate-800 relative overflow-hidden">
+            <div class="h-full rounded-full ${barColor}" style="margin-left:${leftPct}%; width:${widthPct}%;"></div>
+            ${(lowestMidi !== null && highestMidi !== null && highestMidi >= lowestMidi)
+              ? `<div class="absolute top-0 bottom-0 border-x-2 border-amber-400 bg-amber-400/20" style="left:${((lowestMidi - MIN_MIDI)/totalSpan)*100}%; width:${Math.max(2, ((highestMidi - lowestMidi)/totalSpan)*100)}%;"></div>`
+              : ''}
+          </div>
+          <div class="w-16 text-right font-mono text-[10px] text-slate-400">${vt.rangeStr}</div>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    /* =========================================================================
+       INTERACTIVE PIANO STRIP & REFERENCE TONE GENERATOR
+       ========================================================================= */
+    function buildPianoBar() {
+      const bar = document.getElementById('piano-bar');
+      bar.innerHTML = '';
+
+      for (let m = MIN_MIDI; m <= MAX_MIDI; m++) {
+        const noteName = midiToNoteName(m);
+        const isSharp = noteName.includes('#');
+        const isC = noteName.startsWith('C') && !isSharp;
+
+        const key = document.createElement('button');
+        key.id = `piano-key-${m}`;
+        key.onclick = () => playReferenceNote(midiToFreq(m));
+        key.title = `${noteName} (${midiToFreq(m).toFixed(1)} Hz)`;
+
+        key.className = isSharp
+          ? "flex-1 min-w-[14px] h-full rounded-md bg-slate-800 hover:bg-indigo-500/50 border border-slate-700 flex flex-col justify-end items-center pb-1 transition"
+          : "flex-1 min-w-[18px] h-full rounded-md bg-slate-200 hover:bg-indigo-200 text-slate-900 flex flex-col justify-end items-center pb-1 transition";
+
+        if (isC) {
+          key.innerHTML = `<span class="text-[8px] font-mono font-extrabold text-slate-900">${noteName}</span>`;
+        }
+        bar.appendChild(key);
+      }
+    }
+
+    function updatePianoHighlights() {
+      for (let m = MIN_MIDI; m <= MAX_MIDI; m++) {
+        const key = document.getElementById(`piano-key-${m}`);
+        if (!key) continue;
+        const noteName = midiToNoteName(m);
+        const isSharp = noteName.includes('#');
+
+        if (m === lowestMidi) {
+          key.className = "flex-1 min-w-[18px] h-full rounded-md bg-emerald-500 text-slate-950 font-bold flex flex-col justify-end items-center pb-1 shadow-md";
+        } else if (m === highestMidi) {
+          key.className = "flex-1 min-w-[18px] h-full rounded-md bg-pink-500 text-white font-bold flex flex-col justify-end items-center pb-1 shadow-md";
+        } else if (lowestMidi !== null && highestMidi !== null && m > lowestMidi && m < highestMidi) {
+          key.className = isSharp
+            ? "flex-1 min-w-[14px] h-full rounded-md bg-indigo-900 border border-indigo-500/50 flex flex-col justify-end items-center pb-1"
+            : "flex-1 min-w-[18px] h-full rounded-md bg-indigo-300 text-slate-900 flex flex-col justify-end items-center pb-1";
+        } else {
+          key.className = isSharp
+            ? "flex-1 min-w-[14px] h-full rounded-md bg-slate-800 hover:bg-indigo-500/50 border border-slate-700 flex flex-col justify-end items-center pb-1 transition"
+            : "flex-1 min-w-[18px] h-full rounded-md bg-slate-200 hover:bg-indigo-200 text-slate-900 flex flex-col justify-end items-center pb-1 transition";
+        }
+      }
+    }
+
+    function playReferenceNote(freq) {
+      try {
+        const ctx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+        if (ctx.state === 'suspended') ctx.resume();
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, ctx.currentTime);
+        gain.gain.setValueAtTime(0.22, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.1);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 1.15);
+      } catch (e) {}
+    }
+
+    /* =========================================================================
+       LIVE SCROLLING PITCH CANVAS RENDERER
+       ========================================================================= */
+    function drawPitchGraph() {
+      const canvas = document.getElementById('pitch-graph-canvas');
+      if (!canvas) return;
+      const dpr = window.devicePixelRatio || 1;
+      const w = canvas.clientWidth * dpr;
+      const h = canvas.clientHeight * dpr;
+      if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+      }
+
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+
+      const totalNotes = MAX_MIDI - MIN_MIDI;
+      const midiToY = (m) => h - ((m - MIN_MIDI) / totalNotes) * (h * 0.86) - (h * 0.07);
+
+      // Draw octave grid lines (C2, C3, C4, C5, C6)
+      ctx.font = `${10 * dpr}px "JetBrains Mono", monospace`;
+      for (let m = MIN_MIDI; m <= MAX_MIDI; m += 12) {
+        const y = midiToY(m);
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.strokeStyle = '#1e293b';
+        ctx.lineWidth = 1 * dpr;
+        ctx.stroke();
+
+        ctx.fillStyle = '#64748b';
+        ctx.fillText(midiToNoteName(m), 8 * dpr, y - 4 * dpr);
+      }
+
+      // Draw Lowest Note Marker Line
+      if (lowestMidi !== null) {
+        const yLow = midiToY(lowestMidi);
+        ctx.beginPath();
+        ctx.moveTo(0, yLow);
+        ctx.lineTo(w, yLow);
+        ctx.strokeStyle = 'rgba(16, 185, 129, 0.55)';
+        ctx.setLineDash([5 * dpr, 5 * dpr]);
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Draw Highest Note Marker Line
+      if (highestMidi !== null) {
+        const yHigh = midiToY(highestMidi);
+        ctx.beginPath();
+        ctx.moveTo(0, yHigh);
+        ctx.lineTo(w, yHigh);
+        ctx.strokeStyle = 'rgba(236, 72, 153, 0.55)';
+        ctx.setLineDash([5 * dpr, 5 * dpr]);
+        ctx.lineWidth = 1.5 * dpr;
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Draw live pitch ribbon
+      const stepX = w / (HISTORY_LEN - 1);
+      ctx.beginPath();
+      let drawing = false;
+
+      pitchHistory.forEach((mVal, idx) => {
+        if (mVal === null) {
+          drawing = false;
+          return;
+        }
+        const x = idx * stepX;
+        const y = midiToY(Math.max(MIN_MIDI, Math.min(MAX_MIDI, mVal)));
+        if (!drawing) {
+          ctx.moveTo(x, y);
+          drawing = true;
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+
+      ctx.strokeStyle = '#818cf8';
+      ctx.lineWidth = 3 * dpr;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+
+      // Current active dot at right edge
+      const lastVal = pitchHistory[pitchHistory.length - 1];
+      if (lastVal !== null) {
+        const yCur = midiToY(Math.max(MIN_MIDI, Math.min(MAX_MIDI, lastVal)));
+        ctx.beginPath();
+        ctx.arc(w - 6 * dpr, yCur, 5.5 * dpr, 0, Math.PI * 2);
+        ctx.fillStyle = '#c7d2fe';
+        ctx.fill();
+      }
+    }
+
+    function renderLoop() {
+      processFrame();
+      drawPitchGraph();
+      requestAnimationFrame(renderLoop);
+    }
+
+    /* =========================================================================
+       LANGUAGE & UI HELPERS
+       ========================================================================= */
+    function toggleLanguage() {
+      lang = lang === 'de' ? 'en' : 'de';
+      document.getElementById('txt-lang').innerText = lang.toUpperCase();
+      applyLanguage();
+    }
+
+    function applyLanguage() {
+      const t = TEXT[lang];
+      document.getElementById('lbl-subtitle').innerText = t.subtitle;
+      document.getElementById('txt-btn-tips').innerText = t.tipsBtn;
+      document.getElementById('lbl-input-level').innerText = t.level;
+      document.getElementById('lbl-live-pitch').innerText = t.livePitch;
+      document.getElementById('lbl-cap-auto').innerText = t.capAuto;
+      document.getElementById('lbl-cap-low').innerText = t.capLow;
+      document.getElementById('lbl-cap-high').innerText = t.capHigh;
+      document.getElementById('btn-reset-range').innerText = t.reset;
+      document.getElementById('lbl-graph-title').innerText = t.graphTitle;
+      document.getElementById('lbl-graph-legend').innerText = t.graphLegend;
+      document.getElementById('lbl-piano-title').innerText = t.pianoTitle;
+      document.getElementById('lbl-stats-title').innerText = t.statsTitle;
+      document.getElementById('lbl-low-note').innerText = t.lowNote;
+      document.getElementById('lbl-high-note').innerText = t.highNote;
+      document.getElementById('lbl-span').innerText = t.span;
+      document.getElementById('lbl-voicetype-title').innerText = t.vtTitle;
+      document.getElementById('vf-all').innerText = t.filterAll;
+      document.getElementById('vf-male').innerText = t.filterMale;
+      document.getElementById('vf-female').innerText = t.filterFemale;
+      document.getElementById('lbl-quick-tips-title').innerText = t.quickTipsTitle;
+      document.getElementById('lbl-more-tips').innerText = t.moreTips;
+      document.getElementById('tips-modal-title').innerText = t.tipsModalTitle;
+      document.getElementById('tips-modal-body').innerHTML = t.modalHtml;
+      document.getElementById('btn-tips-close').innerText = t.tipsClose;
+
+      // Render 3 quick tip cards
+      const grid = document.getElementById('quick-tips-grid');
+      grid.innerHTML = t.quickCards.map(c => `
+        <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 space-y-1.5">
+          <h3 class="font-bold text-white flex items-center gap-2">
+            <i class="fa-solid ${c.icon}"></i>
+            <span>${c.title}</span>
+          </h3>
+          <p class="text-slate-400 leading-relaxed">${c.text}</p>
+        </div>
+      `).join('');
+
+      updateAudioButtonUI();
+      if (lowestMidi !== null && highestMidi !== null && highestMidi >= lowestMidi && (highestMidi - lowestMidi) >= 4) {
+        updateStatsAndClassification();
+      } else {
+        document.getElementById('voicetype-badge').innerText = t.vtPendingBadge;
+        document.getElementById('vt-name').innerText = t.vtPendingTitle;
+        document.getElementById('vt-desc').innerText = t.vtPendingDesc;
+        renderVoiceTypeBars(null);
+      }
+    }
+
+    function toggleTipsModal(show) {
+      document.getElementById('tips-modal').classList.toggle('hidden', !show);
+    }
+
+    function showToast(msg) {
+      document.getElementById('toast-msg').innerText = msg;
+      document.getElementById('toast-box').classList.remove('hidden');
+    }
+
+    function hideToast() {
+      document.getElementById('toast-box').classList.add('hidden');
+    }
+
+    // Boot
+    window.addEventListener('load', () => {
+      populateAudioDevices();
+      buildPianoBar();
+      applyLanguage();
+      renderLoop();
+    });
+  </script>
+</body>
+</html>
